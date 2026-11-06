@@ -1,0 +1,57 @@
+// Regenerate with scripts/generate_file_types.sh. Do not hand-edit generated/.
+// 正常发送流程：Presence → PREPARE → READY → DataBlock... → End → COMPLETE。
+// End 复用 DataBlock，通过 end=true 标记；取消和错误分别使用 CANCEL、ERROR。
+// string<N> 和 sequence<T, N> 中的 N 是长度上限，不要求每条消息都填满。
+module filewire {
+    // 发送端控制操作：PREPARE 准备接收；重复同一请求可查询状态。CANCEL 取消尚未提交的会话。
+    enum Operation { PREPARE, CANCEL };
+    // 接收端反馈：READY 返回候选起点和 Reader 信息，COMPLETE 表示文件完成，ERROR 表示失败。
+    enum Feedback { READY, COMPLETE, ERROR };
+
+    // 接收端定期发布到 /presence 的在线公告，与具体文件任务无关，不会创建文件数据 Reader。
+    struct Presence {
+        string<64> receiver_id;     // 保存目录对应的稳定身份，接收进程重启后保持不变。
+        string<64> receiver_epoch;  // 本次接收进程的身份，重启后变化，用于识别新旧进程。
+    };
+
+    // 发送端通过 /control 下发准备或取消请求；仅 receiver_id 对应的接收端处理。
+    // 正常发送和补发共用此结构，接收端确认起点后才创建本轮数据 Reader。
+    struct Control {
+        Operation operation;              // PREPARE：准备或查询；CANCEL：取消。
+        string<64> transfer_id;            // 一次文件发送任务的标识，任务内多轮补发保持不变。
+        string<64> session_id;             // 本轮数据流的标识；同轮节点共享，下一轮重新生成。
+        string<64> receiver_id;            // 目标接收端的稳定身份。
+        string<64> receiver_epoch;         // 目标接收进程的身份，防止旧请求作用于重启后的进程。
+        unsigned long generation;         // 同一任务内递增的轮次序号，接收端据此拒绝迟到的旧控制请求。
+        string<255> file_name;             // 最终文件名，仅允许名称，不携带目录路径。
+        string<64> sha256;                 // 完整文件的 SHA-256 十六进制字符串，用于最终校验。
+        unsigned long long total_bytes;   // 完整文件长度，单位为字节。
+        unsigned long long offset;        // 本轮请求的起始字节位置，正常首轮从 0 开始。
+        string<64> prefix_sha256;          // 文件前 offset 个字节的 SHA-256，用于验证接收端已有前缀。
+        boolean repair;                   // false 使用正常数据 Topic；true 使用本轮补发 Topic。
+    };
+
+    // 文件内容和结束标记共用一个数据 Writer，按顺序发布到 /data/<transfer_id>
+    // 或 /repair/<transfer_id>/<session_id>；只有参与本轮的节点创建对应 Reader。
+    struct DataBlock {
+        string<64> transfer_id;            // 文件任务标识，用于找到接收任务。
+        string<64> session_id;             // 数据流所属轮次，用于过滤旧轮次迟到的数据。
+        unsigned long long offset;        // payload 在文件中的起始字节位置；End 时等于完整文件长度。
+        sequence<octet, 262144> payload;   // 文件内容，单块最多 256 KiB；End 时必须为空。
+        boolean end;                      // false 表示文件块；true 表示 End，触发长度检查、校验和文件提交。
+    };
+
+    // 接收端通过 /reply 返回准备结果、最终结果或错误；正常文件块不逐块产生业务回执。
+    // 重复 PREPARE 会返回当前状态或缓存结果，不会重新开始同一会话。
+    struct Reply {
+        Feedback state;                   // READY：准备反馈；COMPLETE：文件已完成；ERROR：失败。
+        string<64> transfer_id;            // 回复所属的文件任务。
+        unsigned long long next_offset;   // 已连续接收的字节数；READY 时提供候选起点，COMPLETE 时为文件长度。
+        string<256> error;                 // 错误原因；正常反馈为空。
+        string<64> receiver_id;            // 发出回复的接收端稳定身份。
+        string<64> receiver_epoch;         // 发出回复的接收进程身份，用于排除已知旧进程的回复。
+        string<64> session_id;             // 回复所属轮次，发送端据此忽略旧会话回复。
+        string<64> reader_id;              // READY 中非空表示数据 Reader 已创建，发送端还需确认其匹配。
+        boolean retryable;                // ERROR 时为 true 表示可重新协商并进入补发队列。
+    };
+};

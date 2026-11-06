@@ -1,0 +1,13 @@
+/out/
+/.venv/
+/sdk/src/
+/CMakeUserPresets.json
+.DS_Store
+__pycache__/
+*.pyc
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx

@@ -1,0 +1,20 @@
+{
+  "names": {
+    "fastdds": {
+      "cmake-args": [
+        "-DCOMPILE_EXAMPLES=OFF",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+        "-DTHIRDPARTY_Asio=FORCE",
+        "-DTHIRDPARTY_TinyXML2=FORCE",
+        "-DTHIRDPARTY_UPDATE=OFF"
+      ]
+    },
+    "fastcdr": {
+      "cmake-args": ["-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"]
+    },
+    "foonathan_memory_vendor": {
+      "cmake-args": ["-DFOONATHAN_MEMORY_FORCE_VENDORED_BUILD=ON"]
+    }
+  }
+}
+
